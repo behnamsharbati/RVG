@@ -1,18 +1,50 @@
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 import telebot
 from telebot import types
+
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 bot = telebot.TeleBot(TOKEN)
 
 
-# =========================
-# /start
-# =========================
+# ==========================================
+# Web Server for Render
+# ==========================================
 
-@bot.message_handler(commands=["start"])
-def start(message):
+class HealthHandler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write("Bot is running!".encode("utf-8"))
+
+    def log_message(self, format, *args):
+        return
+
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+
+    server = HTTPServer(
+        ("0.0.0.0", port),
+        HealthHandler
+    )
+
+    print(f"Web server running on port {port}")
+
+    server.serve_forever()
+
+
+# ==========================================
+# Main Menu
+# ==========================================
+
+def main_menu():
 
     markup = types.ReplyKeyboardMarkup(
         resize_keyboard=True,
@@ -33,40 +65,156 @@ def start(message):
         types.KeyboardButton("👤 پشتیبانی")
     )
 
+    return markup
+
+
+# ==========================================
+# START
+# ==========================================
+
+@bot.message_handler(commands=["start"])
+def start(message):
+
     bot.send_message(
         message.chat.id,
-        "سلام 👋\n\n"
+
+        "سلام 👋 بهنام هستم.\n\n"
         "🌐 به فروشگاه V2ray Valac خوش آمدید.\n\n"
-        "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
-        reply_markup=markup
+        "برای شروع، گزینه موردنظر خود را از منوی زیر انتخاب کنید:",
+
+        reply_markup=main_menu()
     )
 
 
-# =========================
-# خرید کانفیگ
-# =========================
+# ==========================================
+# BUY CONFIG
+# ==========================================
 
 @bot.message_handler(
     func=lambda message: message.text == "🛒 خرید کانفیگ"
 )
 def buy_config(message):
 
+    markup = types.InlineKeyboardMarkup(row_width=1)
+
+    markup.add(
+
+        types.InlineKeyboardButton(
+            "⚡ اشتراک بر سرعت ولک شاپ",
+            callback_data="veloc_shop"
+        ),
+
+        types.InlineKeyboardButton(
+            "🔙 بازگشت",
+            callback_data="back_main"
+        )
+
+    )
+
+    bot.send_message(
+        message.chat.id,
+
+        "🛒 خرید کانفیگ\n\n"
+        "در این بخش اشتراک خود را انتخاب کنید:",
+
+        reply_markup=markup
+    )
+
+
+# ==========================================
+# VELOC SHOP
+# ==========================================
+
+@bot.callback_query_handler(
+    func=lambda call: call.data == "veloc_shop"
+)
+def veloc_shop(call):
+
+    bot.answer_callback_query(call.id)
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+
+    markup.add(
+
+        types.InlineKeyboardButton(
+            "📱 همراه اول",
+            callback_data="internet_mci"
+        ),
+
+        types.InlineKeyboardButton(
+            "📶 Wi-Fi",
+            callback_data="internet_wifi"
+        ),
+
+        types.InlineKeyboardButton(
+            "🔙 بازگشت",
+            callback_data="back_subscription"
+        )
+
+    )
+
+    bot.edit_message_text(
+
+        "⚡ اشتراک بر سرعت ولک شاپ\n\n"
+        "نوع اینترنت خود را انتخاب کنید:",
+
+        call.message.chat.id,
+        call.message.message_id,
+
+        reply_markup=markup
+    )
+
+
+# ==========================================
+# INTERNET TYPE
+# ==========================================
+
+@bot.callback_query_handler(
+    func=lambda call: call.data in [
+        "internet_mci",
+        "internet_wifi"
+    ]
+)
+def select_internet(call):
+
+    bot.answer_callback_query(call.id)
+
+    if call.data == "internet_mci":
+
+        internet_name = "📱 همراه اول"
+        prefix = "mci"
+
+    else:
+
+        internet_name = "📶 Wi-Fi"
+        prefix = "wifi"
+
+
     markup = types.InlineKeyboardMarkup(row_width=2)
 
+
     prices = [
-        ("۱۰ گیگ — ۷۰,۰۰۰ تومان", "buy_10"),
-        ("۲۰ گیگ — ۱۳۸,۰۰۰ تومان", "buy_20"),
-        ("۳۰ گیگ — ۲۰۴,۰۰۰ تومان", "buy_30"),
-        ("۴۰ گیگ — ۲۶۸,۰۰۰ تومان", "buy_40"),
-        ("۵۰ گیگ — ۳۳۰,۰۰۰ تومان", "buy_50"),
-        ("۶۰ گیگ — ۳۹۰,۰۰۰ تومان", "buy_60"),
-        ("۷۰ گیگ — ۴۴۸,۰۰۰ تومان", "buy_70"),
-        ("۸۰ گیگ — ۵۰۴,۰۰۰ تومان", "buy_80"),
-        ("۹۰ گیگ — ۵۵۸,۰۰۰ تومان", "buy_90"),
-        ("۱۰۰ گیگ — ۵۹۹,۰۰۰ تومان", "buy_100")
+
+        ("۱۰ گیگ — ۷۰,۰۰۰ تومان", f"{prefix}_10"),
+        ("۲۰ گیگ — ۱۳۸,۰۰۰ تومان", f"{prefix}_20"),
+
+        ("۳۰ گیگ — ۲۰۴,۰۰۰ تومان", f"{prefix}_30"),
+        ("۴۰ گیگ — ۲۶۸,۰۰۰ تومان", f"{prefix}_40"),
+
+        ("۵۰ گیگ — ۳۳۰,۰۰۰ تومان", f"{prefix}_50"),
+        ("۶۰ گیگ — ۳۹۰,۰۰۰ تومان", f"{prefix}_60"),
+
+        ("۷۰ گیگ — ۴۴۸,۰۰۰ تومان", f"{prefix}_70"),
+        ("۸۰ گیگ — ۵۰۴,۰۰۰ تومان", f"{prefix}_80"),
+
+        ("۹۰ گیگ — ۵۵۸,۰۰۰ تومان", f"{prefix}_90"),
+        ("۱۰۰ گیگ — ۵۹۹,۰۰۰ تومان", f"{prefix}_100")
+
     ]
 
+
     for text, callback in prices:
+
         markup.add(
             types.InlineKeyboardButton(
                 text,
@@ -74,143 +222,85 @@ def buy_config(message):
             )
         )
 
-    bot.send_message(
-        message.chat.id,
-        "🛒 لیست قیمت کانفیگ‌ها\n\n"
-        "لطفاً حجم موردنظر خود را انتخاب کنید:",
+
+    markup.add(
+        types.InlineKeyboardButton(
+            "🔙 بازگشت",
+            callback_data="back_internet"
+        )
+    )
+
+
+    bot.edit_message_text(
+
+        f"{internet_name}\n\n"
+        "📦 لطفاً حجم اشتراک خود را انتخاب کنید:",
+
+        call.message.chat.id,
+        call.message.message_id,
+
         reply_markup=markup
     )
 
 
-# =========================
-# انتخاب حجم
-# =========================
+# ==========================================
+# SELECT CONFIG
+# ==========================================
 
 @bot.callback_query_handler(
-    func=lambda call: call.data.startswith("buy_")
+    func=lambda call: call.data.startswith(
+        ("mci_", "wifi_")
+    )
 )
 def selected_config(call):
 
-    volume = call.data.replace("buy_", "")
+    bot.answer_callback_query(call.id)
+
+
+    parts = call.data.split("_")
+
+    internet_type = parts[0]
+    volume = parts[1]
+
 
     prices = {
+
         "10": "۷۰,۰۰۰ تومان",
         "20": "۱۳۸,۰۰۰ تومان",
         "30": "۲۰۴,۰۰۰ تومان",
         "40": "۲۶۸,۰۰۰ تومان",
         "50": "۳۳۰,۰۰۰ تومان",
+
         "60": "۳۹۰,۰۰۰ تومان",
         "70": "۴۴۸,۰۰۰ تومان",
         "80": "۵۰۴,۰۰۰ تومان",
+
         "90": "۵۵۸,۰۰۰ تومان",
         "100": "۵۹۹,۰۰۰ تومان"
+
     }
 
-    bot.answer_callback_query(call.id)
 
-    price = prices.get(volume)
+    if internet_type == "mci":
+
+        internet_name = "📱 همراه اول"
+
+    else:
+
+        internet_name = "📶 Wi-Fi"
+
+
+    price = prices[volume]
+
 
     text = (
-        f"✅ حجم انتخابی: {volume} گیگ\n"
-        f"💰 مبلغ: {price}\n\n"
-        "💳 اطلاعات پرداخت:\n\n"
-        "شماره کارت:\n"
-        "۵۰۲۲۲۹۱۵۴۴۵۰۷۴۵۰\n\n"
-        "👤 بهنام شربتی نوکنده\n"
-        "🏦 بانک پاسارگاد\n\n"
-        "📞 پس از پرداخت، رسید و اطلاعات سفارش "
-        "را برای پشتیبانی ارسال کنید:\n"
-        "@V2rayngvalac"
-    )
 
-    bot.send_message(
-        call.message.chat.id,
-        text
-    )
+        "✅ سفارش شما\n\n"
 
+        "⚡ اشتراک بر سرعت ولک شاپ\n\n"
 
-# =========================
-# کانفیگ‌های من
-# =========================
+        f"{internet_name}\n"
 
-@bot.message_handler(
-    func=lambda message: message.text == "📦 کانفیگ‌های من"
-)
-def my_configs(message):
+        f"📦 حجم اشتراک: {volume} گیگ\n"
 
-    bot.send_message(
-        message.chat.id,
-        "📦 هنوز کانفیگی برای حساب شما ثبت نشده است."
-    )
-
-
-# =========================
-# پیگیری سفارش
-# =========================
-
-@bot.message_handler(
-    func=lambda message: message.text == "💳 پیگیری سفارش"
-)
-def orders(message):
-
-    bot.send_message(
-        message.chat.id,
-        "💳 لطفاً شماره سفارش خود را برای پشتیبانی ارسال کنید:\n\n"
-        "@V2rayngvalac"
-    )
-
-
-# =========================
-# کد تخفیف
-# =========================
-
-@bot.message_handler(
-    func=lambda message: message.text == "🎁 کد تخفیف"
-)
-def discount(message):
-
-    bot.send_message(
-        message.chat.id,
-        "🎁 اگر کد تخفیف دارید، کد را ارسال کنید."
-    )
-
-
-# =========================
-# پشتیبانی
-# =========================
-
-@bot.message_handler(
-    func=lambda message: message.text == "👤 پشتیبانی"
-)
-def support(message):
-
-    bot.send_message(
-        message.chat.id,
-        "👤 پشتیبانی فروشگاه V2ray Valac\n\n"
-        "📞 آیدی پشتیبانی:\n"
-        "@V2rayngvalac"
-    )
-
-
-# =========================
-# Help
-# =========================
-
-@bot.message_handler(commands=["help"])
-def help_command(message):
-
-    bot.send_message(
-        message.chat.id,
-        "راهنمای ربات 🌐\n\n"
-        "/start - نمایش منوی اصلی\n"
-        "/help - نمایش راهنما"
-    )
-
-
-# =========================
-# Run Bot
-# =========================
-
-print("Bot is running...")
-
-bot.infinity_polling()
+        f"💰 مبلغ
